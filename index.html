@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>宿泊旅行統計ダッシュボード</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0c1222; color:#e2e8f0; font-family:'Noto Sans JP',system-ui,sans-serif; }
+#loading { display:flex; align-items:center; justify-content:center; min-height:100vh; flex-direction:column; gap:16px; }
+#loading .spinner { width:40px; height:40px; border:3px solid rgba(99,102,241,0.2); border-top-color:#818cf8; border-radius:50%; animation:spin 0.8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="root"><div id="loading"><div class="spinner"></div><div style="color:#94a3b8;font-size:13px">データを読み込み中...</div></div></div>
+<script>
+// Data store
+window.__TOURISM_DATA__ = null;
+window.__DATA_LOADED__ = false;
+
+// Load data.json from same directory
+fetch('data.json')
+  .then(r => r.ok ? r.json() : Promise.reject('data.json not found'))
+  .then(d => { window.__TOURISM_DATA__ = d; window.__DATA_LOADED__ = true; renderApp(); })
+  .catch(e => { console.log('No data.json found, showing upload screen'); window.__DATA_LOADED__ = true; renderApp(); });
+
+function renderApp() {
+  if (!window.__DATA_LOADED__) return;
+  // Trigger React render
+  const evt = new CustomEvent('dataReady');
+  window.dispatchEvent(evt);
+}
+</script>
+
+<script type="text/babel" data-type="module">
+const { useState, useMemo, useCallback, useEffect } = React;
+const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, ComposedChart, AreaChart, PieChart, Pie, Cell, BarChart, Bar } = Recharts;
+
+const RAW = window.__TOURISM_DATA__;
+
+const YEARS=[2023,2024,2025,2026];const MONTHS=[1,2,3,4,5,6,7,8,9,10,11,12];
+const ML=["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+const YC={2023:"#38bdf8",2024:"#a78bfa",2025:"#f43f5e",2026:"#eab308"};
+const CC={"韓国":"#3b82f6","中国":"#ef4444","台湾":"#10b981","香港":"#f59e0b","タイ":"#8b5cf6","米国":"#ec4899","豪州":"#06b6d4","英国":"#6366f1","フランス":"#d946ef","ドイツ":"#14b8a6","カナダ":"#f97316","シンガポール":"#84cc16","マレーシア":"#22d3ee","インドネシア":"#a855f7","フィリピン":"#fb7185","ベトナム":"#4ade80","インド":"#fbbf24","オーストラリア":"#06b6d4","総数":"#e2e8f0","その他":"#94a3b8","全国籍･地域":"#e2e8f0"};
+const TOP_C=["韓国","中国","台湾","香港","タイ","米国","豪州"];
+const DONUT_C=["#3b82f6","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#06b6d4","#6366f1","#d946ef","#14b8a6","#f97316","#64748b"];
+const EXP_C={"宿泊費":"#6366f1","飲食費":"#f59e0b","交通費":"#10b981","娯楽等サービス費":"#ec4899","買物代":"#38bdf8"};
+const CATS=["宿泊費","飲食費","交通費","娯楽等サービス費","買物代"];
+
+function gv(ds,p,ym){return ds?.[p]?.[ym]??null;}
+function fmt(n){if(n==null)return"—";if(n>=1e7)return(n/1e4).toFixed(0)+"万";if(n>=1e6)return(n/1e4).toFixed(0)+"万";if(n>=1e4)return(n/1e4).toFixed(1)+"万";return n.toLocaleString();}
+function fmtF(n){if(n==null)return"—";return n.toLocaleString()+"人泊";}
+function fmtP(n){if(n==null)return"—";return n.toLocaleString()+"人";}
+function fmtY(n){if(n==null)return"—";return"¥"+n.toLocaleString();}
+
+const TT=({active,payload,label})=>{if(!active||!payload?.length)return null;
+  return(<div style={{background:"rgba(10,15,30,0.96)",border:"1px solid rgba(99,102,241,0.25)",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#e2e8f0",backdropFilter:"blur(10px)",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",maxHeight:360,overflowY:"auto"}}>
+    <div style={{fontWeight:700,marginBottom:6,color:"#a5b4fc",fontSize:11}}>{label}</div>
+    {payload.filter(p=>p.value!=null).map((p,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",gap:16,marginBottom:2}}>
+      <span style={{color:p.color,fontSize:11}}>{p.name}</span>
+      <span style={{fontWeight:600,fontVariantNumeric:"tabular-nums",fontSize:11}}>{typeof p.value==='number'&&Math.abs(p.value)>1000?p.value>50000?fmtY(p.value):fmtP(p.value):p.value?.toFixed?.(1)+"%"}</span>
+    </div>))}</div>);};
+
+function YearSelector({years,selected,onToggle}){return(<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{years.map(y=>{const on=selected.includes(y);
+  return(<button key={y} onClick={()=>onToggle(y)} style={{padding:"5px 14px",borderRadius:20,border:on?`2px solid ${YC[y]}`:"2px solid rgba(100,116,139,0.25)",background:on?YC[y]+"20":"rgba(30,41,59,0.4)",color:on?YC[y]:"#64748b",fontSize:12,fontWeight:on?700:500,cursor:"pointer",transition:"all 0.15s"}}>{y}</button>);})}</div>);}
+
+function YearlyChart({dataset,pref,title,selectedYears,onToggleYear,unit}){
+  const cd=MONTHS.map((m,i)=>{const r={name:ML[i]};selectedYears.forEach(y=>{const ym=`${y}${String(m).padStart(2,"0")}`;const v=gv(dataset,pref,ym);if(v!=null)r[String(y)]=v;});return r;});
+  const av=[];cd.forEach(r=>{selectedYears.forEach(y=>{const v=r[String(y)];if(v!=null)av.push(v);});});
+  let mn=Math.min(...av),mx=Math.max(...av);if(!av.length){mn=0;mx=100;}const p=(mx-mn)*0.12||mx*0.1||10;
+  const d0=unit==="%"?Math.max(0,Math.floor((mn-p)/5)*5):Math.max(0,Math.floor(mn-p));const d1=unit==="%"?Math.ceil((mx+p)/5)*5:Math.ceil(mx+p);
+  return(<div style={{marginBottom:8}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>{title}</h3>
+    <ResponsiveContainer width="100%" height={280}><LineChart data={cd} margin={{top:5,right:8,left:8,bottom:5}}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:11,fill:"#94a3b8"}}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={v=>unit==="%"?v+"%":fmt(v)} width={55} domain={[d0,d1]}/><Tooltip content={<TT/>}/>
+      {selectedYears.map(y=>{if(!cd.some(d=>d[String(y)]!=null))return null;return <Line key={y} type="monotone" dataKey={String(y)} stroke={YC[y]} strokeWidth={2.5} dot={{r:3,fill:YC[y],strokeWidth:0}} activeDot={{r:5,strokeWidth:0}} connectNulls/>;})}
+    </LineChart></ResponsiveContainer>
+    <div style={{overflowX:"auto",marginTop:6}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontVariantNumeric:"tabular-nums"}}>
+      <thead><tr><th style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"6px 8px",textAlign:"left",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",zIndex:1,minWidth:50}}></th>
+        {ML.map(m=><th key={m} style={{padding:"6px 4px",textAlign:"right",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",whiteSpace:"nowrap",minWidth:56}}>{m}</th>)}</tr></thead>
+      <tbody>{YEARS.map(y=>{const on=selectedYears.includes(y);if(!MONTHS.some(m=>gv(dataset,pref,`${y}${String(m).padStart(2,"0")}`)!=null))return null;
+        return(<tr key={y} onClick={()=>onToggleYear(y)} style={{cursor:"pointer",opacity:on?1:0.3,transition:"opacity 0.15s"}}>
+          <td style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"5px 8px",fontWeight:700,color:YC[y],borderBottom:"1px solid rgba(99,102,241,0.06)",zIndex:1,userSelect:"none"}}><span style={{display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:on?YC[y]:"transparent",border:`2px solid ${YC[y]}`,display:"inline-block",flexShrink:0}}></span>{y}</span></td>
+          {MONTHS.map(m=>{const v=gv(dataset,pref,`${y}${String(m).padStart(2,"0")}`);return <td key={m} style={{padding:"5px 4px",textAlign:"right",color:v!=null?"#cbd5e1":"#334155",borderBottom:"1px solid rgba(99,102,241,0.06)",whiteSpace:"nowrap"}}>{v!=null?(unit==="%"?v.toFixed(1)+"%":fmt(v)):"—"}</td>;})}</tr>);})}</tbody></table></div></div>);
+}
+function ForeignRatioChart({pref,selectedYears}){const cd=[];[...selectedYears].sort((a,b)=>a-b).forEach(y=>{MONTHS.forEach(m=>{const ym=`${y}${String(m).padStart(2,"0")}`;const t=gv(RAW.t,pref,ym);const f=gv(RAW.f,pref,ym);const j=gv(RAW.j,pref,ym);if(t&&f!=null&&j!=null)cd.push({name:`${y}/${m}`,日本人:j,外国人:f,外国人比率:Math.round(f/t*1000)/10});});});
+  return(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>日本人 vs 外国人 宿泊者数推移</h3>
+    <ResponsiveContainer width="100%" height={280}><ComposedChart data={cd} margin={{top:5,right:8,left:8,bottom:5}}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:9,fill:"#94a3b8"}} interval={Math.max(1,Math.floor(cd.length/14))}/><YAxis yAxisId="left" tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={fmt} width={55}/><YAxis yAxisId="right" orientation="right" tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={v=>v+"%"} width={36} domain={[0,"auto"]}/><Tooltip content={<TT/>}/>
+      <Area yAxisId="left" type="monotone" dataKey="日本人" fill="rgba(99,102,241,0.2)" stroke="#6366f1" strokeWidth={1.5}/><Area yAxisId="left" type="monotone" dataKey="外国人" fill="rgba(244,63,94,0.2)" stroke="#f43f5e" strokeWidth={1.5}/><Line yAxisId="right" type="monotone" dataKey="外国人比率" stroke="#eab308" strokeWidth={2} dot={false}/>
+    </ComposedChart></ResponsiveContainer></div>);}
+function PrefComparison({dataset,prefs,selectedYears,title,unit}){const year=Math.max(...selectedYears);const cd=MONTHS.map((m,i)=>{const r={name:ML[i]};prefs.forEach(p=>{const v=gv(dataset,p,`${year}${String(m).padStart(2,"0")}`);if(v!=null)r[p]=v;});return r;});
+  const av=[];cd.forEach(r=>{prefs.forEach(p=>{const v=r[p];if(v!=null)av.push(v);});});let mn=Math.min(...av),mx=Math.max(...av);if(!av.length){mn=0;mx=100;}const p=(mx-mn)*0.12||mx*0.1||10;const d0=unit==="%"?Math.max(0,Math.floor((mn-p)/5)*5):Math.max(0,Math.floor(mn-p));const d1=unit==="%"?Math.ceil((mx+p)/5)*5:Math.ceil(mx+p);
+  const cl=["#818cf8","#f43f5e","#34d399","#fb923c"];
+  return(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>{title}（{year}年）</h3>
+    <ResponsiveContainer width="100%" height={260}><LineChart data={cd} margin={{top:5,right:8,left:8,bottom:5}}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:11,fill:"#94a3b8"}}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={v=>unit==="%"?v+"%":fmt(v)} width={55} domain={[d0,d1]}/><Tooltip content={<TT/>}/>
+      {prefs.map((p,i)=><Line key={p} type="monotone" dataKey={p} name={p} stroke={cl[i%4]} strokeWidth={2.5} dot={{r:3,fill:cl[i%4],strokeWidth:0}} connectNulls/>)}
+    </LineChart></ResponsiveContainer></div>);}
+function CountryYearChart({country,selectedYears,onToggleYear}){const cd=MONTHS.map((m,i)=>{const r={name:ML[i]};selectedYears.forEach(y=>{const v=gv(RAW.jd,country,`${y}${String(m).padStart(2,"0")}`);if(v!=null)r[String(y)]=v;});return r;});
+  const av=[];cd.forEach(r=>{selectedYears.forEach(y=>{const v=r[String(y)];if(v!=null)av.push(v);});});let mn=Math.min(...av),mx=Math.max(...av);if(!av.length){mn=0;mx=100;}const p=(mx-mn)*0.15||mx*0.1||10;
+  return(<div style={{marginBottom:8}}><ResponsiveContainer width="100%" height={280}><LineChart data={cd} margin={{top:5,right:8,left:8,bottom:5}}>
+    <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:11,fill:"#94a3b8"}}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={fmt} width={55} domain={[Math.max(0,Math.floor(mn-p)),Math.ceil(mx+p)]}/><Tooltip content={<TT/>}/>
+    {selectedYears.map(y=>{if(!cd.some(d=>d[String(y)]!=null))return null;return <Line key={y} type="monotone" dataKey={String(y)} stroke={YC[y]} strokeWidth={2.5} dot={{r:3,fill:YC[y],strokeWidth:0}} activeDot={{r:5,strokeWidth:0}} connectNulls/>;})}
+  </LineChart></ResponsiveContainer>
+  <div style={{overflowX:"auto",marginTop:6}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontVariantNumeric:"tabular-nums"}}>
+    <thead><tr><th style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"6px 8px",textAlign:"left",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",zIndex:1,minWidth:50}}></th>
+      {ML.map(m=><th key={m} style={{padding:"6px 4px",textAlign:"right",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",whiteSpace:"nowrap",minWidth:56}}>{m}</th>)}</tr></thead>
+    <tbody>{YEARS.map(y=>{const on=selectedYears.includes(y);if(!MONTHS.some(m=>gv(RAW.jd,country,`${y}${String(m).padStart(2,"0")}`)!=null))return null;
+      return(<tr key={y} onClick={()=>onToggleYear(y)} style={{cursor:"pointer",opacity:on?1:0.3,transition:"opacity 0.15s"}}>
+        <td style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"5px 8px",fontWeight:700,color:YC[y],borderBottom:"1px solid rgba(99,102,241,0.06)",zIndex:1,userSelect:"none"}}><span style={{display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,borderRadius:2,background:on?YC[y]:"transparent",border:`2px solid ${YC[y]}`,display:"inline-block",flexShrink:0}}></span>{y}</span></td>
+        {MONTHS.map(m=>{const v=gv(RAW.jd,country,`${y}${String(m).padStart(2,"0")}`);return <td key={m} style={{padding:"5px 4px",textAlign:"right",color:v!=null?"#cbd5e1":"#334155",borderBottom:"1px solid rgba(99,102,241,0.06)",whiteSpace:"nowrap"}}>{v!=null?fmt(v):"—"}</td>;})}</tr>);})}</tbody></table></div></div>);}
+function CountryLineChart({selectedYears,countries}){const ly=Math.max(...selectedYears);const cd=MONTHS.map((m,i)=>{const r={name:ML[i]};countries.forEach(c=>{const v=gv(RAW.jd,c,`${ly}${String(m).padStart(2,"0")}`);if(v!=null)r[c]=v;});return r;});
+  return(<div style={{marginBottom:8}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>国別 訪日外国人数（{ly}年）</h3>
+    <ResponsiveContainer width="100%" height={300}><LineChart data={cd} margin={{top:5,right:8,left:8,bottom:5}}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:11,fill:"#94a3b8"}}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={fmt} width={55}/><Tooltip content={<TT/>}/>
+      {countries.map(c=><Line key={c} type="monotone" dataKey={c} stroke={CC[c]||"#94a3b8"} strokeWidth={2} dot={{r:2.5,fill:CC[c]||"#94a3b8",strokeWidth:0}} connectNulls/>)}
+    </LineChart></ResponsiveContainer>
+    <div style={{overflowX:"auto",marginTop:6}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontVariantNumeric:"tabular-nums"}}>
+      <thead><tr><th style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"6px 8px",textAlign:"left",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",zIndex:1,minWidth:56}}>{ly}年</th>
+        {ML.map(m=><th key={m} style={{padding:"6px 4px",textAlign:"right",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",whiteSpace:"nowrap",minWidth:56}}>{m}</th>)}</tr></thead>
+      <tbody>{countries.map(c=>{if(!MONTHS.some(m=>gv(RAW.jd,c,`${ly}${String(m).padStart(2,"0")}`)!=null))return null;
+        return(<tr key={c}><td style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"5px 8px",fontWeight:700,color:CC[c]||"#94a3b8",borderBottom:"1px solid rgba(99,102,241,0.06)",zIndex:1,whiteSpace:"nowrap"}}>{c}</td>
+          {MONTHS.map(m=>{const v=gv(RAW.jd,c,`${ly}${String(m).padStart(2,"0")}`);return <td key={m} style={{padding:"5px 4px",textAlign:"right",color:v!=null?"#cbd5e1":"#334155",borderBottom:"1px solid rgba(99,102,241,0.06)",whiteSpace:"nowrap"}}>{v!=null?fmt(v):"—"}</td>;})}</tr>);})}</tbody></table></div></div>);}
+function CompositionDonut({selectedYears}){const ly=Math.max(...selectedYears);const sums=[];RAW.jc.filter(c=>c!=="総数").forEach(c=>{let s=0;MONTHS.forEach(m=>{const v=gv(RAW.jd,c,`${ly}${String(m).padStart(2,"0")}`);if(v)s+=v;});if(s>0)sums.push({name:c,value:s});});
+  sums.sort((a,b)=>b.value-a.value);const top=sums.slice(0,8);const ov=sums.slice(8).reduce((a,b)=>a+b.value,0);if(ov>0)top.push({name:"その他",value:ov});const gt=top.reduce((a,b)=>a+b.value,0);
+  return(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>国別構成比（{ly}年）</h3>
+    <div style={{display:"flex",flexWrap:"wrap",gap:16,alignItems:"center",justifyContent:"center"}}>
+      <ResponsiveContainer width={260} height={260}><PieChart><Pie data={top} cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2} dataKey="value" stroke="none">{top.map((e,i)=><Cell key={i} fill={DONUT_C[i%DONUT_C.length]}/>)}</Pie><Tooltip formatter={v=>fmtP(v)}/></PieChart></ResponsiveContainer>
+      <div style={{fontSize:12}}>{top.map((e,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+        <span style={{width:10,height:10,borderRadius:2,background:DONUT_C[i%DONUT_C.length],flexShrink:0}}></span><span style={{color:"#cbd5e1",minWidth:80}}>{e.name}</span>
+        <span style={{color:"#94a3b8",fontVariantNumeric:"tabular-nums",minWidth:70,textAlign:"right"}}>{fmtP(e.value)}</span>
+        <span style={{color:"#64748b",fontVariantNumeric:"tabular-nums",minWidth:40,textAlign:"right"}}>{(e.value/gt*100).toFixed(1)}%</span></div>))}</div></div></div>);}
+function CountryStackedArea({selectedYears}){const cd=[];[...selectedYears].sort((a,b)=>a-b).forEach(y=>{MONTHS.forEach(m=>{const ym=`${y}${String(m).padStart(2,"0")}`;const r={name:`${y}/${m}`};let h=false;TOP_C.forEach(c=>{const v=gv(RAW.jd,c,ym);if(v!=null){r[c]=v;h=true;}});if(h)cd.push(r);});});
+  return(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>主要国 訪日外国人数 推移（積み上げ）</h3>
+    <ResponsiveContainer width="100%" height={300}><AreaChart data={cd} margin={{top:5,right:8,left:8,bottom:5}}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:9,fill:"#94a3b8"}} interval={Math.max(1,Math.floor(cd.length/14))}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={fmt} width={55}/><Tooltip content={<TT/>}/>
+      {TOP_C.map(c=><Area key={c} type="monotone" dataKey={c} stackId="1" fill={CC[c]+"40"} stroke={CC[c]} strokeWidth={1}/>)}</AreaChart></ResponsiveContainer></div>);}
+function GrowthTable({selectedYears,countries}){const ly=Math.max(...selectedYears);
+  return(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>前年同月比 伸率（{ly}年）</h3>
+    <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontVariantNumeric:"tabular-nums"}}>
+      <thead><tr><th style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"6px 8px",textAlign:"left",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",zIndex:1,minWidth:56}}></th>
+        {ML.map(m=><th key={m} style={{padding:"6px 4px",textAlign:"right",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",whiteSpace:"nowrap",minWidth:52}}>{m}</th>)}</tr></thead>
+      <tbody>{["総数",...countries.filter(c=>c!=="総数")].map(c=>{if(!MONTHS.some(m=>gv(RAW.jg,c,`${ly}${String(m).padStart(2,"0")}`)!=null))return null;
+        return(<tr key={c}><td style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"5px 8px",fontWeight:c==="総数"?800:600,color:c==="総数"?"#e2e8f0":CC[c]||"#94a3b8",borderBottom:"1px solid rgba(99,102,241,0.06)",zIndex:1,whiteSpace:"nowrap"}}>{c}</td>
+          {MONTHS.map(m=>{const v=gv(RAW.jg,c,`${ly}${String(m).padStart(2,"0")}`);const cl=v==null?"#334155":v>0?"#34d399":"#f43f5e";
+            return <td key={m} style={{padding:"5px 4px",textAlign:"right",color:cl,borderBottom:"1px solid rgba(99,102,241,0.06)",whiteSpace:"nowrap",fontWeight:c==="総数"?700:400}}>{v!=null?(v>0?"+":"")+v.toFixed(1)+"%":"—"}</td>;})}</tr>);})}</tbody></table></div></div>);}
+
+/* ════ CONSUMPTION ════ */
+function ConsumptionByCountry(){const cs=RAW.cs;const countries=Object.keys(cs.ct).filter(c=>c!=="全国籍･地域"&&c!=="その他");
+  const data=countries.map(c=>({name:c,消費単価:cs.ct[c]||0})).sort((a,b)=>b.消費単価-a.消費単価);
+  return(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:4}}>国別 1人1回あたり旅行消費単価（2025年確報）</h3><div style={{fontSize:11,color:"#64748b",marginBottom:12}}>インバウンド消費動向調査</div>
+    <ResponsiveContainer width="100%" height={Math.max(300,data.length*28)}><BarChart data={data} layout="vertical" margin={{top:5,right:8,left:8,bottom:5}}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis type="number" tick={{fontSize:10,fill:"#94a3b8"}} tickFormatter={v=>"¥"+(v/10000).toFixed(0)+"万"}/><YAxis type="category" dataKey="name" width={90} tick={{fontSize:11,fill:"#cbd5e1"}}/><Tooltip formatter={v=>fmtY(v)}/>
+      <Bar dataKey="消費単価" fill="#818cf8" radius={[0,4,4,0]} barSize={18}/></BarChart></ResponsiveContainer></div>);}
+
+function ExpenseBreakdown(){const cs=RAW.cs;const countries=["全国籍･地域","韓国","台湾","香港","中国","米国","英国","オーストラリア"];
+  const data=countries.filter(c=>cs.ce[c]).map(c=>{const r={name:c==="全国籍･地域"?"全体":c};CATS.forEach(cat=>{r[cat]=cs.ce[c]?.[cat]||0;});return r;});
+  return(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:4}}>費目別 購入者単価（国別・2025年確報）</h3><div style={{fontSize:11,color:"#64748b",marginBottom:12}}>インバウンド消費動向調査</div>
+    <ResponsiveContainer width="100%" height={320}><BarChart data={data} margin={{top:5,right:8,left:8,bottom:5}}>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:10,fill:"#94a3b8"}} interval={0} angle={-30} textAnchor="end" height={50}/><YAxis tick={{fontSize:10,fill:"#94a3b8"}} tickFormatter={v=>"¥"+(v/10000).toFixed(0)+"万"}/><Tooltip formatter={v=>fmtY(v)}/>
+      {CATS.map(cat=><Bar key={cat} dataKey={cat} stackId="1" fill={EXP_C[cat]}/>)}</BarChart></ResponsiveContainer>
+    <div style={{display:"flex",gap:12,flexWrap:"wrap",justifyContent:"center",marginTop:8}}>{CATS.map(cat=>(<div key={cat} style={{display:"flex",alignItems:"center",gap:4,fontSize:11}}>
+      <span style={{width:10,height:10,borderRadius:2,background:EXP_C[cat]}}></span><span style={{color:"#94a3b8"}}>{cat}</span></div>))}</div></div>);}
+
+function PrefConsumptionDetail({prefName}){
+  const cs=RAW.cs;const pn=prefName.replace(/^\d+/,"");
+  const trip=cs.pt?.[pn];const night=cs.pn?.[pn];const nights=cs.pg?.[pn];const exp=cs.pe?.[pn];const vr=cs.pv?.[pn]||{};
+  // Compare with neighbors: find 5 nearby prefs in ranking
+  const allPrefs=Object.keys(cs.pt).filter(p=>!p.includes("運輸局")&&!p.includes("計"));
+  const sorted=allPrefs.map(p=>({name:p,trip:cs.pt[p]||0})).sort((a,b)=>b.trip-a.trip);
+  const idx=sorted.findIndex(s=>s.name===pn);const neighbors=sorted.slice(Math.max(0,idx-2),idx+3);
+
+  // Expense breakdown for this pref
+  const expData=exp?CATS.map(cat=>({name:cat,value:exp[cat]||0})):[];
+  const expTotal=expData.reduce((a,b)=>a+b.value,0);
+
+  // Visit rate by country
+  const vrData=Object.entries(vr).filter(([k])=>k!=="全国籍･地域"&&k!=="その他").map(([k,v])=>({name:k,rate:v})).sort((a,b)=>b.rate-a.rate).slice(0,10);
+
+  // Comparison bar data
+  const compPrefs=[pn,"東京都","大阪府","京都府","北海道"].filter((v,i,a)=>a.indexOf(v)===i);
+  const compData=compPrefs.filter(p=>cs.pt[p]).map(p=>{const r={name:p};CATS.forEach(cat=>{r[cat]=cs.pe?.[p]?.[cat]||0;});return r;});
+
+  return(<>
+    {/* KPIs for selected pref */}
+    <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+      <KPI label={`${pn} 消費単価/回（2025年）`} value={fmtY(trip)} color="#818cf8"/>
+      <KPI label={`${pn} 消費単価/泊（2025年）`} value={fmtY(night)} color="#38bdf8"/>
+      <KPI label={`${pn} 平均泊数（2025年）`} value={nights?nights+"泊":"—"} color="#34d399"/>
+      <KPI label={`${pn} 訪問率（2025年）`} value={vr["全国籍･地域"]?vr["全国籍･地域"]+"%":"—"} color="#f59e0b"/>
+    </div>
+
+    {/* Pref expense breakdown donut */}
+    {expData.length>0&&(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>{pn} 費目別内訳（2025年確報）</h3>
+      <div style={{display:"flex",flexWrap:"wrap",gap:16,alignItems:"center",justifyContent:"center"}}>
+        <ResponsiveContainer width={220} height={220}><PieChart><Pie data={expData} cx="50%" cy="50%" innerRadius={50} outerRadius={95} paddingAngle={2} dataKey="value" stroke="none">
+          {expData.map((e,i)=><Cell key={i} fill={EXP_C[e.name]||DONUT_C[i]}/>)}</Pie><Tooltip formatter={v=>fmtY(v)}/></PieChart></ResponsiveContainer>
+        <div style={{fontSize:12}}>{expData.map((e,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+          <span style={{width:10,height:10,borderRadius:2,background:EXP_C[e.name]||DONUT_C[i],flexShrink:0}}></span>
+          <span style={{color:"#cbd5e1",minWidth:100}}>{e.name}</span><span style={{color:"#94a3b8",fontVariantNumeric:"tabular-nums",minWidth:70,textAlign:"right"}}>{fmtY(e.value)}</span>
+          <span style={{color:"#64748b",fontVariantNumeric:"tabular-nums",minWidth:36,textAlign:"right"}}>{expTotal?(e.value/expTotal*100).toFixed(0)+"%":"—"}</span></div>))}</div></div></div>)}
+
+    {/* Comparison with major prefectures */}
+    <div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:4}}>費目別 消費単価 比較</h3><div style={{fontSize:11,color:"#64748b",marginBottom:12}}>{pn} vs 主要都道府県（2025年確報）</div>
+      <ResponsiveContainer width="100%" height={280}><BarChart data={compData} margin={{top:5,right:8,left:8,bottom:5}}>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:11,fill:"#94a3b8"}}/><YAxis tick={{fontSize:10,fill:"#94a3b8"}} tickFormatter={v=>"¥"+(v/10000).toFixed(0)+"万"}/><Tooltip formatter={v=>fmtY(v)}/>
+        {CATS.map(cat=><Bar key={cat} dataKey={cat} stackId="1" fill={EXP_C[cat]}/>)}</BarChart></ResponsiveContainer>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",justifyContent:"center",marginTop:8}}>{CATS.map(cat=>(<div key={cat} style={{display:"flex",alignItems:"center",gap:4,fontSize:11}}>
+        <span style={{width:10,height:10,borderRadius:2,background:EXP_C[cat]}}></span><span style={{color:"#94a3b8"}}>{cat}</span></div>))}</div></div>
+
+    {/* Visit rate by country */}
+    {vrData.length>0&&(<div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>{pn} 国別訪問率（2025年確報）</h3>
+      <ResponsiveContainer width="100%" height={Math.max(200,vrData.length*28)}><BarChart data={vrData} layout="vertical" margin={{top:5,right:8,left:8,bottom:5}}>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis type="number" tick={{fontSize:10,fill:"#94a3b8"}} tickFormatter={v=>v+"%"}/><YAxis type="category" dataKey="name" width={80} tick={{fontSize:11,fill:"#cbd5e1"}}/><Tooltip formatter={v=>v.toFixed(2)+"%"}/>
+        <Bar dataKey="rate" name="訪問率" fill="#34d399" radius={[0,4,4,0]} barSize={16}/></BarChart></ResponsiveContainer></div>)}
+
+    {/* Ranking position */}
+    <div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>消費単価ランキング（2025年確報・近隣順位）</h3>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <thead><tr><th style={{padding:"8px",textAlign:"left",color:"#475569",borderBottom:"1px solid rgba(99,102,241,0.12)"}}>順位</th><th style={{padding:"8px",textAlign:"left",color:"#475569",borderBottom:"1px solid rgba(99,102,241,0.12)"}}>都道府県</th><th style={{padding:"8px",textAlign:"right",color:"#475569",borderBottom:"1px solid rgba(99,102,241,0.12)"}}>消費/回</th><th style={{padding:"8px",textAlign:"right",color:"#475569",borderBottom:"1px solid rgba(99,102,241,0.12)"}}>消費/泊</th><th style={{padding:"8px",textAlign:"right",color:"#475569",borderBottom:"1px solid rgba(99,102,241,0.12)"}}>平均泊数</th></tr></thead>
+        <tbody>{sorted.map((s,i)=>{const isCurrent=s.name===pn;const show=Math.abs(i-idx)<=3||i<3;if(!show)return null;
+          return(<tr key={i} style={{background:isCurrent?"rgba(99,102,241,0.15)":"transparent"}}>
+            <td style={{padding:"6px 8px",color:isCurrent?"#818cf8":"#94a3b8",fontWeight:isCurrent?700:400,borderBottom:"1px solid rgba(99,102,241,0.06)"}}>{i+1}位</td>
+            <td style={{padding:"6px 8px",color:isCurrent?"#e2e8f0":"#cbd5e1",fontWeight:isCurrent?700:400,borderBottom:"1px solid rgba(99,102,241,0.06)"}}>{s.name}</td>
+            <td style={{padding:"6px 8px",textAlign:"right",color:isCurrent?"#e2e8f0":"#cbd5e1",fontVariantNumeric:"tabular-nums",borderBottom:"1px solid rgba(99,102,241,0.06)"}}>{fmtY(s.trip)}</td>
+            <td style={{padding:"6px 8px",textAlign:"right",color:"#94a3b8",fontVariantNumeric:"tabular-nums",borderBottom:"1px solid rgba(99,102,241,0.06)"}}>{fmtY(cs.pn?.[s.name])}</td>
+            <td style={{padding:"6px 8px",textAlign:"right",color:"#94a3b8",fontVariantNumeric:"tabular-nums",borderBottom:"1px solid rgba(99,102,241,0.06)"}}>{cs.pg?.[s.name]?cs.pg[s.name]+"泊":"—"}</td>
+          </tr>);})}</tbody></table></div></div>
+  </>);}
+
+
+/* ════ NATIONALITY × PREFECTURE ════ */
+function NatPrefSection({prefName}){
+  const pn=prefName.replace(/^[0-9]+/,"");const npd=RAW.np?.[prefName];
+  if(!npd)return <div style={{color:"#64748b",fontSize:12}}>国籍別データなし</div>;
+  
+  const nats=Object.keys(npd).filter(k=>k!=="total"&&k!=="その他");
+  const annual=npd.total?.a||0;
+  
+  // Donut: annual by nationality
+  const donutData=nats.map(n=>({name:n,value:npd[n]?.a||0})).filter(d=>d.value>0).sort((a,b)=>b.value-a.value);
+  const top8=donutData.slice(0,8);const ov=donutData.slice(8).reduce((a,b)=>a+b.value,0)+(npd["その他"]?.a||0);
+  if(ov>0)top8.push({name:"その他",value:ov});const gt=top8.reduce((a,b)=>a+b.value,0);
+  
+  // Monthly line chart for top nationalities
+  const topNats=donutData.slice(0,6).map(d=>d.name);
+  const monthlyData=MONTHS.map((m,i)=>{const r={name:ML[i]};topNats.forEach(n=>{const v=npd[n]?.[String(m)];if(v!=null)r[n]=v;});r["合計"]=npd.total?.[String(m)]||0;return r;});
+  
+  return(<>
+    <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+      <KPI label={pn+" 外国人宿泊者数（2024年）"} value={annual?fmtP(annual):"—"} color="#818cf8"/>
+      {donutData.slice(0,3).map(d=><KPI key={d.name} label={d.name} value={fmtP(d.value)} sub={gt?(d.value/gt*100).toFixed(1)+"%":""} color={CC[d.name]||"#94a3b8"}/>)}
+    </div>
+    
+    {/* Donut */}
+    <div style={{marginBottom:32}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>{pn} 国籍別 外国人宿泊者数構成（2024年確定値）</h3>
+      <div style={{display:"flex",flexWrap:"wrap",gap:16,alignItems:"center",justifyContent:"center"}}>
+        <ResponsiveContainer width={240} height={240}><PieChart><Pie data={top8} cx="50%" cy="50%" innerRadius={55} outerRadius={100} paddingAngle={2} dataKey="value" stroke="none">
+          {top8.map((e,i)=><Cell key={i} fill={DONUT_C[i%DONUT_C.length]}/>)}</Pie><Tooltip formatter={v=>fmtP(v)}/></PieChart></ResponsiveContainer>
+        <div style={{fontSize:12}}>{top8.map((e,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+          <span style={{width:10,height:10,borderRadius:2,background:DONUT_C[i%DONUT_C.length],flexShrink:0}}></span>
+          <span style={{color:"#cbd5e1",minWidth:80}}>{e.name}</span><span style={{color:"#94a3b8",fontVariantNumeric:"tabular-nums",minWidth:60,textAlign:"right"}}>{fmtP(e.value)}</span>
+          <span style={{color:"#64748b",fontVariantNumeric:"tabular-nums",minWidth:36,textAlign:"right"}}>{gt?(e.value/gt*100).toFixed(1)+"%":"—"}</span></div>))}</div></div></div>
+    
+    {/* Monthly line */}
+    <div style={{marginBottom:8}}><h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",marginBottom:12}}>{pn} 主要国籍 月別宿泊者数推移（2024年確定値）</h3>
+      <ResponsiveContainer width="100%" height={280}><LineChart data={monthlyData} margin={{top:5,right:8,left:8,bottom:5}}>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.08)"/><XAxis dataKey="name" tick={{fontSize:11,fill:"#94a3b8"}}/><YAxis tick={{fontSize:11,fill:"#94a3b8"}} tickFormatter={fmt} width={50}/><Tooltip content={<TT/>}/>
+        {topNats.map(n=><Line key={n} type="monotone" dataKey={n} stroke={CC[n]||"#94a3b8"} strokeWidth={2} dot={{r:2.5,fill:CC[n]||"#94a3b8",strokeWidth:0}} connectNulls/>)}
+      </LineChart></ResponsiveContainer>
+      {/* Table */}
+      <div style={{overflowX:"auto",marginTop:6}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontVariantNumeric:"tabular-nums"}}>
+        <thead><tr><th style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"6px 8px",textAlign:"left",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",zIndex:1,minWidth:56}}>2024年</th>
+          {ML.map(m=><th key={m} style={{padding:"6px 4px",textAlign:"right",color:"#475569",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.12)",whiteSpace:"nowrap",minWidth:50}}>{m}</th>)}
+          <th style={{padding:"6px 4px",textAlign:"right",color:"#a5b4fc",fontWeight:700,borderBottom:"1px solid rgba(99,102,241,0.12)",whiteSpace:"nowrap",minWidth:56}}>年計</th></tr></thead>
+        <tbody>
+          <tr><td style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"5px 8px",fontWeight:800,color:"#e2e8f0",borderBottom:"1px solid rgba(99,102,241,0.08)",zIndex:1}}>合計</td>
+            {MONTHS.map(m=>{const v=npd.total?.[String(m)];return <td key={m} style={{padding:"5px 4px",textAlign:"right",color:"#e2e8f0",fontWeight:700,borderBottom:"1px solid rgba(99,102,241,0.08)",whiteSpace:"nowrap"}}>{v?fmt(v):"—"}</td>;})}
+            <td style={{padding:"5px 4px",textAlign:"right",color:"#a5b4fc",fontWeight:800,borderBottom:"1px solid rgba(99,102,241,0.08)",whiteSpace:"nowrap"}}>{fmt(annual)}</td></tr>
+          {donutData.map(d=>(
+            <tr key={d.name}><td style={{position:"sticky",left:0,background:"rgba(12,18,34,0.98)",padding:"5px 8px",fontWeight:600,color:CC[d.name]||"#94a3b8",borderBottom:"1px solid rgba(99,102,241,0.06)",zIndex:1,whiteSpace:"nowrap"}}>{d.name}</td>
+              {MONTHS.map(m=>{const v=npd[d.name]?.[String(m)];return <td key={m} style={{padding:"5px 4px",textAlign:"right",color:v?"#cbd5e1":"#334155",borderBottom:"1px solid rgba(99,102,241,0.06)",whiteSpace:"nowrap"}}>{v?fmt(v):"—"}</td>;})}
+              <td style={{padding:"5px 4px",textAlign:"right",color:"#94a3b8",fontWeight:600,borderBottom:"1px solid rgba(99,102,241,0.06)",whiteSpace:"nowrap"}}>{fmt(d.value)}</td></tr>
+          ))}
+        </tbody></table></div></div>
+  </>);}
+
+function KPI({label,value,sub,color}){return(<div style={{background:"rgba(30,41,59,0.6)",borderRadius:12,padding:"14px 18px",border:"1px solid rgba(99,102,241,0.12)",flex:"1 1 130px",minWidth:130}}>
+  <div style={{fontSize:10,color:"#94a3b8",marginBottom:3,letterSpacing:"0.04em",lineHeight:1.3}}>{label}</div>
+  <div style={{fontSize:20,fontWeight:800,color:color||"#e2e8f0",letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{value}</div>
+  {sub&&<div style={{fontSize:10,color:sub.includes("+")?"#34d399":sub.includes("-")?"#f43f5e":"#64748b",marginTop:2,fontWeight:600}}>{sub}</div>}</div>);}
+
+/* ══════ MAIN ══════ */
+function Dashboard(){
+  const [pref,setPref]=useState("32島根県");const [comparePref,setComparePref]=useState("全　国");
+  const [selectedYears,setSelectedYears]=useState([2024,2025,2026]);const [tab,setTab]=useState("overview");
+  const [inboundCountries,setInboundCountries]=useState(TOP_C);const [focusCountry,setFocusCountry]=useState("総数");
+  const toggleYear=useCallback(y=>{setSelectedYears(p=>{if(p.includes(y)){if(p.length<=1)return p;return p.filter(v=>v!==y);}return[...p,y].sort((a,b)=>a-b);});},[]);
+  const toggleCountry=useCallback(c=>{setInboundCountries(p=>{if(p.includes(c)){if(p.length<=1)return p;return p.filter(v=>v!==c);}return[...p,c];});},[]);
+  const latestYM=useMemo(()=>{const k=Object.keys(RAW.t[pref]||{}).sort();return k[k.length-1]||"202602";},[pref]);
+  const lY=parseInt(latestYM.slice(0,4)),lM=parseInt(latestYM.slice(4));
+  const kpis=useMemo(()=>{const t=gv(RAW.t,pref,latestYM),j=gv(RAW.j,pref,latestYM),f=gv(RAW.f,pref,latestYM),o=gv(RAW.o,pref,latestYM);const pv=`${lY-1}${latestYM.slice(4)}`;const tP=gv(RAW.t,pref,pv),fP=gv(RAW.f,pref,pv);
+    const yoy=t&&tP?((t/tP-1)*100).toFixed(1):null;const fR=t&&f?(f/t*100).toFixed(1):null;const fYoy=f&&fP?((f/fP-1)*100).toFixed(1):null;return{t,j,f,o,yoy,fR,fYoy};},[pref,latestYM,lY]);
+  const tabs=[{id:"overview",label:"概要"},{id:"total",label:"延べ宿泊者数"},{id:"inbound",label:"インバウンド"},{id:"consumption",label:"消費動向"},{id:"occupancy",label:"稼働率"},{id:"compare",label:"地域比較"}];
+  const availableYears=useMemo(()=>YEARS.filter(y=>MONTHS.some(m=>gv(RAW.t,pref,`${y}${String(m).padStart(2,"0")}`)!=null)),[pref]);
+  const allCountries=RAW.jc.filter(c=>c!=="総数");const jntoYears=YEARS.filter(y=>MONTHS.some(m=>gv(RAW.jd,"総数",`${y}${String(m).padStart(2,"0")}`)!=null));
+  const showPref=["overview","total","occupancy","compare","consumption"].includes(tab);
+  const showYear=["overview","total","occupancy","compare","inbound"].includes(tab);
+  const showKpi=["overview","total","occupancy","compare"].includes(tab);
+
+  return(<div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0c1222 0%,#1a1145 45%,#0c1222 100%)",color:"#e2e8f0",fontFamily:"'Noto Sans JP',system-ui,sans-serif",padding:"20px 14px"}}>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet"/>
+    <div style={{marginBottom:20}}><div style={{fontSize:10,color:"#818cf8",fontWeight:700,letterSpacing:"0.18em",marginBottom:3}}>JAPAN TOURISM ANALYTICS</div>
+      <h1 style={{fontSize:22,fontWeight:900,background:"linear-gradient(90deg,#c7d2fe,#818cf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",margin:0,lineHeight:1.2}}>宿泊旅行統計ダッシュボード</h1>
+      <div style={{fontSize:11,color:"#475569",marginTop:3}}>観光庁 + JNTO + インバウンド消費動向調査</div></div>
+
+    {showPref&&(<div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:6}}>
+      <label style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>都道府県</label>
+      <select value={pref} onChange={e=>setPref(e.target.value)} style={{background:"rgba(30,41,59,0.9)",color:"#e2e8f0",border:"1px solid rgba(99,102,241,0.25)",borderRadius:8,padding:"5px 10px",fontSize:12,outline:"none",cursor:"pointer"}}>
+        {RAW.p.map(p=><option key={p} value={p}>{p}</option>)}</select></div></div>)}
+    {showYear&&(<div style={{marginBottom:16}}><div style={{fontSize:11,color:"#94a3b8",marginBottom:6}}>表示年（複数選択で比較）</div>
+      <YearSelector years={tab==="inbound"?jntoYears:availableYears} selected={selectedYears} onToggle={toggleYear}/></div>)}
+    {showKpi&&(<div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+      <KPI label={`延べ宿泊者数（${lY}/${lM}月）`} value={fmtF(kpis.t)} sub={kpis.yoy?`前年同月比 ${kpis.yoy>0?"+":""}${kpis.yoy}%`:""} color={kpis.yoy>0?"#34d399":"#f43f5e"}/>
+      <KPI label="外国人宿泊者数" value={fmt(kpis.f)} sub={kpis.fYoy?`前年同月比 ${kpis.fYoy>0?"+":""}${kpis.fYoy}%`:""} color="#818cf8"/>
+      <KPI label="外国人比率" value={kpis.fR?kpis.fR+"%":"—"} color="#eab308"/><KPI label="客室稼働率" value={kpis.o?kpis.o+"%":"—"} color="#38bdf8"/></div>)}
+
+    <div style={{display:"flex",gap:3,marginBottom:18,overflowX:"auto",paddingBottom:2}}>
+      {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",borderRadius:8,border:"none",cursor:"pointer",fontSize:12,fontWeight:tab===t.id?700:400,background:tab===t.id?"rgba(99,102,241,0.25)":"transparent",color:tab===t.id?"#c7d2fe":"#64748b",whiteSpace:"nowrap",transition:"all 0.15s"}}>{t.label}</button>))}</div>
+
+    <div style={{background:"rgba(12,18,34,0.6)",borderRadius:16,padding:"18px 12px",border:"1px solid rgba(99,102,241,0.08)"}}>
+      {tab==="overview"&&(<><ForeignRatioChart pref={pref} selectedYears={selectedYears}/><YearlyChart dataset={RAW.t} pref={pref} title="延べ宿泊者数（年別月次推移）" selectedYears={selectedYears} onToggleYear={toggleYear}/><YearlyChart dataset={RAW.o} pref={pref} title="客室稼働率（年別月次推移）" selectedYears={selectedYears} onToggleYear={toggleYear} unit="%"/></>)}
+      {tab==="total"&&(<><YearlyChart dataset={RAW.t} pref={pref} title="延べ宿泊者数（合計）" selectedYears={selectedYears} onToggleYear={toggleYear}/><div style={{height:20}}/><YearlyChart dataset={RAW.j} pref={pref} title="日本人 延べ宿泊者数" selectedYears={selectedYears} onToggleYear={toggleYear}/><div style={{height:20}}/><YearlyChart dataset={RAW.f} pref={pref} title="外国人（インバウンド）延べ宿泊者数" selectedYears={selectedYears} onToggleYear={toggleYear}/></>)}
+
+      {tab==="inbound"&&(<>
+        {(()=>{const ly=Math.max(...selectedYears);const lym=MONTHS.map(m=>`${ly}${String(m).padStart(2,"0")}`).filter(ym=>gv(RAW.jd,"総数",ym)!=null);const lastYm=lym[lym.length-1];
+          const tv=lastYm?gv(RAW.jd,"総数",lastYm):null;const tg=lastYm?gv(RAW.jg,"総数",lastYm):null;const mo=lastYm?parseInt(lastYm.slice(4)):null;
+          return(<div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+            <KPI label={`訪日外国人総数（${ly}/${mo}月）`} value={tv?fmtP(tv):"—"} sub={tg!=null?`前年同月比 ${tg>0?"+":""}${tg.toFixed(1)}%`:""} color="#818cf8"/>
+            {["韓国","中国","台湾"].map(c=>{const v=lastYm?gv(RAW.jd,c,lastYm):null;const g=lastYm?gv(RAW.jg,c,lastYm):null;return <KPI key={c} label={c} value={v?fmtP(v):"—"} sub={g!=null?`${g>0?"+":""}${g.toFixed(1)}%`:""} color={CC[c]}/>;})}</div>);})()}
+        <div style={{marginBottom:24}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          <h3 style={{fontSize:14,fontWeight:700,color:"#c7d2fe",margin:0}}>国別×年 比較</h3>
+          <select value={focusCountry} onChange={e=>setFocusCountry(e.target.value)} style={{background:"rgba(30,41,59,0.9)",color:"#e2e8f0",border:`1.5px solid ${CC[focusCountry]||"rgba(99,102,241,0.3)"}`,borderRadius:8,padding:"5px 10px",fontSize:12,outline:"none",cursor:"pointer"}}>
+            <option value="総数">全合計（総数）</option>{allCountries.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+          <CountryYearChart country={focusCountry} selectedYears={selectedYears} onToggleYear={toggleYear}/></div>
+        <div style={{marginBottom:16}}><div style={{fontSize:11,color:"#94a3b8",marginBottom:6}}>表示国（タップで切替）</div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{allCountries.map(c=>{const on=inboundCountries.includes(c);
+            return(<button key={c} onClick={()=>toggleCountry(c)} style={{padding:"4px 10px",borderRadius:16,border:on?`1.5px solid ${CC[c]||"#94a3b8"}`:"1.5px solid rgba(100,116,139,0.2)",background:on?(CC[c]||"#94a3b8")+"18":"transparent",color:on?CC[c]||"#94a3b8":"#475569",fontSize:11,cursor:"pointer",transition:"all 0.15s"}}>{c}</button>);})}</div></div>
+        <CountryLineChart selectedYears={selectedYears} countries={inboundCountries}/><div style={{height:20}}/>
+        <CountryStackedArea selectedYears={selectedYears}/><CompositionDonut selectedYears={selectedYears}/><GrowthTable selectedYears={selectedYears} countries={inboundCountries}/>
+      </>)}
+
+      {tab==="consumption"&&(<>
+        <NatPrefSection prefName={pref}/>
+        <div style={{height:24,borderTop:"1px solid rgba(99,102,241,0.12)",marginBottom:24}}/>
+        <PrefConsumptionDetail prefName={pref}/>
+        <div style={{height:24,borderTop:"1px solid rgba(99,102,241,0.12)",marginBottom:24}}/>
+        <ConsumptionByCountry/><ExpenseBreakdown/>
+      </>)}
+
+      {tab==="occupancy"&&(<YearlyChart dataset={RAW.o} pref={pref} title="客室稼働率（年別月次推移）" selectedYears={selectedYears} onToggleYear={toggleYear} unit="%"/>)}
+      {tab==="compare"&&(<><div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+        <label style={{fontSize:11,color:"#94a3b8"}}>比較先：</label>
+        <select value={comparePref} onChange={e=>setComparePref(e.target.value)} style={{background:"rgba(30,41,59,0.9)",color:"#e2e8f0",border:"1px solid rgba(99,102,241,0.25)",borderRadius:8,padding:"5px 10px",fontSize:12,outline:"none"}}>
+          {RAW.p.filter(p=>p!==pref).map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+        <PrefComparison dataset={RAW.t} prefs={[pref,comparePref]} selectedYears={selectedYears} title="延べ宿泊者数 比較"/>
+        <PrefComparison dataset={RAW.f} prefs={[pref,comparePref]} selectedYears={selectedYears} title="外国人宿泊者数 比較"/>
+        <PrefComparison dataset={RAW.o} prefs={[pref,comparePref]} selectedYears={selectedYears} title="客室稼働率 比較" unit="%"/></>)}
+    </div>
+    <div style={{textAlign:"center",fontSize:9,color:"#334155",marginTop:20,padding:"10px 0"}}>データ出典：観光庁「宿泊旅行統計調査」／日本政府観光局（JNTO）／インバウンド消費動向調査（2025年確報）</div>
+  </div>);}
+
+
+function App() {
+  const [data, setData] = useState(window.__TOURISM_DATA__);
+  
+  useEffect(() => {
+    const handler = () => setData(window.__TOURISM_DATA__);
+    window.addEventListener('dataReady', handler);
+    return () => window.removeEventListener('dataReady', handler);
+  }, []);
+
+  if (!data) {
+    return (
+      <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0c1222 0%,#1a1145 45%,#0c1222 100%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div style={{textAlign:"center",maxWidth:500}}>
+          <div style={{fontSize:10,color:"#818cf8",fontWeight:700,letterSpacing:"0.18em",marginBottom:8}}>JAPAN TOURISM ANALYTICS</div>
+          <h1 style={{fontSize:24,fontWeight:900,color:"#c7d2fe",marginBottom:16}}>宿泊旅行統計ダッシュボード</h1>
+          <p style={{color:"#94a3b8",fontSize:13,marginBottom:24}}>data.json が見つかりません。<br/>リポジトリに data.json を配置してください。</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <Dashboard />;
+}
+
+// Render
+window.addEventListener('dataReady', () => {
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+});
+if (window.__DATA_LOADED__) {
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+}
+
+</script>
+</body>
+</html>
