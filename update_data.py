@@ -163,6 +163,125 @@ def parse_jnto(filepath):
     return {"d":d, "g":g, "countries":[c for c in KEY if c in d], "regions":[]}
 
 
+def parse_jnto_monthly(filepath, whitelist):
+    """JNTO 訪日外客数（月次様式 / YYYY.MM シート）。
+    1ファイル＝1か月。国名=col2、当月値(2026年)=col5、前年同月(2025年)=col4。
+    伸率は col6 が数式のため自前計算 (col5-col4)/col4*100。
+    whitelist（＝data.json の jc 23件）に含まれる国・地域のみ取り込む（ホワイトリスト方式）。
+    行が存在しない国（例: ニュージーランド）は自然に欠測となりスキップ（歯抜けを許容）。
+    戻り値: {"d":{国:{YYYYMM:実数}}, "g":{国:{YYYYMM:伸率}}, "ym":"YYYYMM"}"""
+    import re
+    from openpyxl import load_workbook
+    wb = load_workbook(filepath, read_only=True)
+
+    # --- シート名 YYYY.MM を検出 ---
+    ym = None; sheet = None
+    for s in wb.sheetnames:
+        m = re.fullmatch(r'(\d{4})\.(\d{1,2})', str(s).strip())
+        if m:
+            sheet = s
+            ym = f"{int(m.group(1))}{int(m.group(2)):02d}"
+            break
+    if not sheet:
+        raise ValueError(f"YYYY.MM 形式のシートが見つかりません: {wb.sheetnames}")
+
+    ws = wb[sheet]; rows = list(ws.iter_rows(values_only=True))
+    wl = set(whitelist)
+    d, g = {}, {}
+    for row in rows[6:]:                       # 総数行(r6)以降が国データ
+        vals = list(row)
+        c = vals[2] if len(vals) > 2 else None
+        if c is None: continue
+        c = str(c).strip()
+        # 注記行ガード: 空 / 12字超 / ◆・注 始まり を除外
+        if not c or len(c) > 12 or c.startswith('◆') or c.startswith('注'): continue
+        if c not in wl: continue               # jc の23件のみ（北欧地域・中東地域・その他は無視）
+        cur = vals[5] if len(vals) > 5 else None    # 当月 2026年
+        prev = vals[4] if len(vals) > 4 else None   # 前年同月 2025年
+        if cur is None: continue               # 値欠測はスキップ
+        try:
+            v = round(float(cur))
+        except (TypeError, ValueError):
+            continue
+        d.setdefault(c, {})[ym] = v            # jd（実数）差分マージ用
+        # 伸率 jg を自前計算（前年同月が有効な数値のときのみ）
+        try:
+            pv = float(prev)
+            if pv != 0:
+                g.setdefault(c, {})[ym] = round((v - pv) / pv * 100, 1)
+        except (TypeError, ValueError):
+            pass
+    return {"d":d, "g":g, "ym":ym}
+
+
+def parse_shukuhaku_kakuho(filepath):
+    """観光庁 宿泊旅行統計 月次確報（第2次確報）。1ファイル＝1か月。
+    第2表: col1=延べ宿泊者数(t)、col19=うち外国人延べ(f)、日本人(j)=t−f。
+    第8表: col1=客室稼働率(o)。
+    全国行(r6, col0='令和N年M月')は '全　国' キー、都道府県行(r7〜)は先頭の
+    全角空白を除去してキー化（例 '　01北海道'→'01北海道'）。運輸局等の行は除外。
+    案A: 全国 t/j/f/o も確報値で返す（呼び出し側で既存を上書き）。
+    戻り値: {"t":{key:{ym:v}}, "j":..., "f":..., "o":..., "ym":ym}"""
+    import re
+    from openpyxl import load_workbook
+    wb = load_workbook(filepath, read_only=True)
+
+    def find_sheet(num):
+        for s in wb.sheetnames:
+            m = re.fullmatch(rf'第{num}表\((\d+)月\)', str(s).strip())
+            if m: return s, int(m.group(1))
+        return None, None
+
+    s2, mon = find_sheet(2)
+    s8, _ = find_sheet(8)
+    if not s2 or not s8:
+        raise ValueError(f"第2表/第8表が見つかりません: {wb.sheetnames}")
+
+    r2 = list(wb[s2].iter_rows(values_only=True))
+    r8 = list(wb[s8].iter_rows(values_only=True))
+
+    # 年は全国行(r6) col0 の '令和N年M月' から取得（令和N → 2018+N）
+    m = re.match(r'令和(\d+)年', str(r2[6][0]))
+    if not m or mon is None:
+        raise ValueError(f"年月を解析できません: {r2[6][0]!r}")
+    ym = f"{int(m.group(1)) + 2018}{mon:02d}"
+
+    def num(v):
+        if v is None or v == '-': return None
+        try: return float(v)
+        except (TypeError, ValueError): return None
+
+    def keyname(cell, is_total):
+        if is_total: return '全　国'
+        name = str(cell).replace('　', '').strip()
+        return name if name[:2].isdigit() else None   # 47都道府県のみ（運輸局等を除外）
+
+    t, j, f, o = {}, {}, {}, {}
+
+    # 第2表 → t / f / j（j=t−f）
+    for i in range(6, len(r2)):
+        cell = r2[i][0]
+        if not cell: continue
+        key = keyname(cell, i == 6)
+        if not key: continue
+        tv = num(r2[i][1]); fv = num(r2[i][19])
+        if tv is not None: t[key] = {ym: round(tv)}
+        if fv is not None: f[key] = {ym: round(fv)}
+        if tv is not None and fv is not None:
+            j[key] = {ym: round(tv - fv)}
+
+    # 第8表 → o（客室稼働率）
+    for i in range(6, len(r8)):
+        cell = r8[i][0]
+        if not cell: continue
+        key = keyname(cell, i == 6)
+        if not key: continue
+        ov = num(r8[i][1])
+        if ov is not None: o[key] = {ym: round(ov, 1)}
+
+    return {"t":t, "j":j, "f":f, "o":o, "ym":ym}
+
+
 def parse_consumption(filepath):
     """インバウンド消費動向調査"""
     import pandas as pd
