@@ -43,18 +43,20 @@ GitHub Pages で自動配信。`main` ブランチへの push で自動更新。
 
 # 【保存版】月次更新の完全手順（次回の自分へ）
 
-> データは `data.json` がマスター。更新後は必ず `index.html` 内の `var RAW = {...}` に
-> 再埋め込みして初めて画面に反映される。作業場所は必ず `~/Desktop/tourism-analytics/`。
+> データは `data.json` がマスター。**3系統すべて1行コマンドで実行でき**、
+> スクリプトが `data.json` 更新と `index.html`（`var RAW = {...}`）の再埋め込みまで自動で行う。
+> 作業場所は必ず `~/Desktop/tourism-analytics/`。
 
-## 0. データ3系統と使うスクリプト（早見表）
-| # | データ | いつ | 入力Excel（目安サイズ） | 使うもの | 更新範囲 |
-|---|--------|------|----------------|----------|----------|
-| A | 全国 月次速報（第1次速報） | 毎月 | `第1表(N月)`を含む速報（約26KB） | `update_monthly.py`（CLI） | 全国 t/j/f/o のみ |
-| B | 都道府県別 確報（第2次確報） | 確報公表時 | `第2表/第8表(N月)`を含む確報（約357KB） | `update_data.py` の `parse_shukuhaku_kakuho`（下記スニペット） | 全国＋都道府県47件 t/j/f/o |
-| C | JNTO 訪日外客数 | 毎月 | 月別推計値（`YYYY.MM`シート、約18KB） | `update_data.py` の `parse_jnto_monthly`（下記スニペット） | jd/jg（国別実数・伸率） |
+## 0. データ3系統と1行コマンド（早見表）
+| # | データ | いつ | 入力Excel（目安サイズ） | 1行コマンド | 更新範囲 |
+|---|--------|------|----------------|-------------|----------|
+| A | 全国 月次速報（第1次速報） | 毎月 | `第1表(N月)`を含む速報（約26KB） | `python3 update_monthly.py 202604_宿泊統計.xlsx` | 全国 t/j/f/o のみ |
+| B | 都道府県別 確報（第2次確報） | 確報公表時 | `第2表/第8表(N月)`を含む確報（約357KB） | `python3 update_data.py --kakuho 202603_宿泊統計.xlsx` | 全国＋都道府県47件 t/j/f/o |
+| C | JNTO 訪日外客数 | 毎月 | 月別推計値（`YYYY.MM`シート、約18KB） | `python3 update_data.py --jnto-monthly 202604_JNTO.xlsx 202605_JNTO.xlsx` | jd/jg（国別実数・伸率） |
 
 - A→Bの順序：速報Aで全国を先行更新し、後日確報Bが出たら**案A（後述）で全国を確報値に上書き**して都道府県と揃える。
-- Cは独立。毎月AとCがセットで出る。
+- Cは独立。毎月AとCがセットで出る。**Cは複数月をスペース区切りでまとめて指定可**。
+- B/C はどちらも `data.json` 更新後に `index.html` を自動で再埋め込みする（手動スニペット不要）。
 
 ## 1. 入手先URLとダウンロードするExcel
 ### A/B 観光庁 宿泊旅行統計
@@ -78,53 +80,30 @@ GitHub Pages で自動配信。`main` ブランチへの push で自動更新。
 ## 3. 実行コマンド（系統別）
 > どれも `~/Desktop/tourism-analytics/` で実行。まず `--deploy` なし＝ローカルのみ更新。
 
-### A. 全国 月次速報 → `update_monthly.py`（CLIそのまま）
+> 3系統とも `data.json` 更新＋`index.html` 再埋め込みまで自動。すべて push はしない（公開は5章）。
+
+### A. 全国 月次速報
 ```bash
 cd ~/Desktop/tourism-analytics
-python3 update_monthly.py 202604_宿泊統計.xlsx      # data.json＋index.html を更新（pushはしない）
+python3 update_monthly.py 202604_宿泊統計.xlsx
 ```
 
-### B. 都道府県別 確報 → `parse_shukuhaku_kakuho`（Pythonスニペット）
+### B. 都道府県別 確報（案A：全国上書き＋都道府県47追加）
 ```bash
 cd ~/Desktop/tourism-analytics
-python3 - <<'PY'
-import json, update_data as U
-d = json.load(open('data.json'))
-res = U.parse_shukuhaku_kakuho('202603_宿泊統計.xlsx')   # ←確報ファイル名
-ym = res['ym']
-for k in 'tjfo':
-    for key, mv in res[k].items():
-        d[k].setdefault(key, {})[ym] = mv[ym]            # 全国=上書き / 都道府県47=追加（案A）
-json.dump(d, open('data.json','w'), ensure_ascii=False, separators=(',',':'))
-# index.html の var RAW を再埋め込み
-h = open('index.html').read()
-s = h.index('var RAW = ') + len('var RAW = '); e = h.index(';\n</script>', s)
-open('index.html','w').write(h[:s] + json.dumps(d, ensure_ascii=False, separators=(',',':')) + h[e:])
-print('確報反映:', ym, '/ 都道府県', sum(1 for x in d['t'] if x[:2].isdigit() and ym in d['t'][x]), '件')
-PY
+python3 update_data.py --kakuho 202603_宿泊統計.xlsx
 ```
 
-### C. JNTO 月次 → `parse_jnto_monthly`（Pythonスニペット・複数月まとめて可）
+### C. JNTO 月次（複数月まとめて指定可）
 ```bash
 cd ~/Desktop/tourism-analytics
-python3 - <<'PY'
-import json, update_data as U
-d = json.load(open('data.json')); jc = d['jc']
-for f in ['202604_JNTO.xlsx', '202605_JNTO.xlsx']:                # ←処理する月を列挙
-    res = U.parse_jnto_monthly(f, jc); ym = res['ym']
-    for c, mv in res['d'].items():
-        d['jd'].setdefault(c, {})
-        if ym not in d['jd'][c]: d['jd'][c][ym] = mv[ym]          # 既存は上書きせず純追加
-    for c, mv in res['g'].items():
-        d['jg'].setdefault(c, {})
-        if ym not in d['jg'][c]: d['jg'][c][ym] = mv[ym]
-    print('JNTO反映:', ym, '/ 国', len(res['d']), '件')
-json.dump(d, open('data.json','w'), ensure_ascii=False, separators=(',',':'))
-h = open('index.html').read()
-s = h.index('var RAW = ') + len('var RAW = '); e = h.index(';\n</script>', s)
-open('index.html','w').write(h[:s] + json.dumps(d, ensure_ascii=False, separators=(',',':')) + h[e:])
-PY
+python3 update_data.py --jnto-monthly 202604_JNTO.xlsx 202605_JNTO.xlsx
+# 1ファイルだけなら: python3 update_data.py --jnto-monthly 202604_JNTO.xlsx
 ```
+
+> 内部ロジックは `update_data.py` の `parse_shukuhaku_kakuho` / `parse_jnto_monthly`。
+> CLI は既存パーサを呼ぶ薄いラッパで、回帰テスト済み（pre状態から再構築して本番とバイト一致）。
+> `--kakuho` と `--jnto-monthly` は1コマンドに併記も可能（例: `python3 update_data.py --kakuho 確報.xlsx --jnto-monthly J1.xlsx J2.xlsx`）。
 
 ## 4. 重要な仕様メモ（ハマりどころ）
 - **案A採用**：確報(B)が出たら、その月は**全国も確報値で上書き**し、都道府県別と一致させる（都道府県47合計＝全国が成立する）。
@@ -143,7 +122,10 @@ git checkout main && git pull                       # 最新化
 git checkout -b feature/YYYYQn-update               # 作業ブランチ
 cp data.json data.json.bak                          # 保険バックアップ
 
-# 3章のA/B/Cを必要な分だけ実行（すべて --deploy なし＝ローカルのみ）
+# 3章のA/B/Cを必要な分だけ実行（例。すべてローカルのみ更新、pushしない）
+python3 update_monthly.py 202604_宿泊統計.xlsx                        # A 全国速報
+python3 update_data.py --kakuho 202603_宿泊統計.xlsx                  # B 都道府県確報
+python3 update_data.py --jnto-monthly 202604_JNTO.xlsx 202605_JNTO.xlsx  # C JNTO
 
 open index.html                                     # ★ブラウザで目視確認★
 #   - 全国系タブに最新月が出るか / 地域比較タブに都道府県別が出るか

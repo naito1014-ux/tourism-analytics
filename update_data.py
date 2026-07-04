@@ -431,14 +431,28 @@ def parse_natpref(filepath):
     return result
 
 
+def reembed_index(data, index_path):
+    """data を index.html 内の `var RAW = {...};` ブロックへ再埋め込みする。"""
+    with open(index_path) as f:
+        html = f.read()
+    s = html.index('var RAW = ') + len('var RAW = ')
+    e = html.index(';\n</script>', s)
+    with open(index_path, 'w') as f:
+        f.write(html[:s] + json.dumps(data, ensure_ascii=False, separators=(',',':')) + html[e:])
+
+
 def main():
     parser = argparse.ArgumentParser(description='宿泊統計ダッシュボード データ更新')
     parser.add_argument('--shukuhaku', help='観光庁 宿泊旅行統計 推移表 (.xlsx)')
     parser.add_argument('--jnto', help='JNTO 訪日外客数 (.xlsx)')
     parser.add_argument('--consumption', help='インバウンド消費動向調査 (.xls)')
     parser.add_argument('--natpref', help='宿泊旅行統計 国籍別×都道府県 (.xlsx)')
+    parser.add_argument('--kakuho', help='宿泊旅行統計 第2次確報 (.xlsx)：全国上書き＋都道府県47追加（案A）')
+    parser.add_argument('--jnto-monthly', nargs='+', metavar='XLSX',
+                        help='JNTO 月次推計値 (.xlsx)：複数指定可・純追加マージ')
     parser.add_argument('--output', default='data.json', help='出力先 (default: data.json)')
     args = parser.parse_args()
+    reembed = False   # --kakuho / --jnto-monthly 使用時に index.html を再埋め込み
     
     # Load existing data if available
     existing = {}
@@ -470,12 +484,44 @@ def main():
         n = parse_natpref(args.natpref)
         existing["np"] = n
         print(f"  → {len(n)} 都道府県")
-    
+
+    if args.kakuho:
+        print(f"宿泊統計 第2次確報を処理中: {args.kakuho}")
+        k = parse_shukuhaku_kakuho(args.kakuho)
+        ym = k["ym"]
+        for key in "tjfo":
+            existing.setdefault(key, {})
+            for name, mv in k[key].items():
+                existing[key].setdefault(name, {})[ym] = mv[ym]   # 全国=上書き / 都道府県=追加（案A）
+        npref = sum(1 for x in existing["t"] if x[:2].isdigit() and ym in existing["t"][x])
+        print(f"  → {ym}: 全国上書き＋都道府県 {npref} 件")
+        reembed = True
+
+    if args.jnto_monthly:
+        wl = existing.get("jc", [])
+        for path in args.jnto_monthly:
+            print(f"JNTO月次を処理中: {path}")
+            r = parse_jnto_monthly(path, wl)
+            ym = r["ym"]
+            for c, mv in r["d"].items():
+                existing.setdefault("jd", {}).setdefault(c, {})
+                if ym not in existing["jd"][c]: existing["jd"][c][ym] = mv[ym]   # 既存は上書きせず純追加
+            for c, mv in r["g"].items():
+                existing.setdefault("jg", {}).setdefault(c, {})
+                if ym not in existing["jg"][c]: existing["jg"][c][ym] = mv[ym]
+            print(f"  → {ym}: {len(r['d'])} カ国 追加")
+        reembed = True
+
     with open(args.output, 'w') as f:
         json.dump(existing, f, ensure_ascii=False, separators=(',',':'))
-    
+
     size = os.path.getsize(args.output)
     print(f"\n✅ {args.output} を更新しました ({size/1024:.0f} KB)")
+
+    if reembed:
+        index_path = os.path.join(os.path.dirname(os.path.abspath(args.output)), 'index.html')
+        reembed_index(existing, index_path)
+        print(f"✅ index.html に再埋め込みしました ({os.path.getsize(index_path)/1024:.0f} KB)")
 
 if __name__ == '__main__':
     main()
