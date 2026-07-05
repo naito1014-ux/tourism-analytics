@@ -431,6 +431,184 @@ def parse_natpref(filepath):
     return result
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# 日本人消費（旅行・観光消費動向調査） dc キー用パーサ
+#   canonical単位: amt=百万円 / trav=千人 / unit=円per人回
+#   全国: 全目的/観光 × 宿泊/日帰り/計（T01=unit, T03=trav, T07=amt）
+#   県別: 全目的(表1系)/観光(表2系)、宿泊/日帰り分解なし（表x-1=trav/unit, 表x-3=amt）
+# ─────────────────────────────────────────────────────────────────────────
+def _dc_val(v):
+    """セル値を数値化。'-'・空・None は None を返す。"""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if s == '' or s == '-':
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _dc_total_row(ws, min_row=6, max_scan=30):
+    """ヘッダ以降で最初に第2列(列2)が数値になる行＝総計行の行番号(1始まり)。
+    四半期表は「旅行時期」行、年次表は「(男女，)年齢」行がこれに該当する。"""
+    for i in range(min_row, min_row + max_scan):
+        if _dc_val(ws.cell(row=i, column=2).value) is not None:
+            return i
+    return None
+
+
+def parse_dc_national(filepath):
+    """全国表(T01/T03/T07)から 全目的/観光 × 宿泊/日帰り/計 の3点セットを読む。
+    戻り値: {目的: {区分: {'amt':百万円, 'trav':千人, 'unit':円per人回}}}"""
+    from openpyxl import load_workbook
+    wb = load_workbook(filepath, read_only=True, data_only=True)
+
+    def total_cell(sheet, col):
+        ws = wb[sheet]
+        r = _dc_total_row(ws)
+        return _dc_val(ws.cell(row=r, column=col).value)
+
+    # T03(trav,千人)/T07(amt,百万円) は同一列レイアウト
+    #   計/全目的=2, 宿泊/全目的=3, 宿泊/観光=4, 日帰り/全目的=7, 日帰り/観光=8
+    trav = {'全目的': {}, '観光': {}}
+    amt = {'全目的': {}, '観光': {}}
+    for seg, c in {'計': 2, '宿泊': 3, '日帰り': 7}.items():
+        trav['全目的'][seg] = total_cell('T03', c)
+        amt['全目的'][seg] = total_cell('T07', c)
+    for seg, c in {'宿泊': 4, '日帰り': 8}.items():
+        trav['観光'][seg] = total_cell('T03', c)
+        amt['観光'][seg] = total_cell('T07', c)
+    # 観光/計 は非公表 → 宿泊観光 + 日帰り観光 で合成
+    trav['観光']['計'] = (trav['観光']['宿泊'] or 0) + (trav['観光']['日帰り'] or 0)
+    amt['観光']['計'] = (amt['観光']['宿泊'] or 0) + (amt['観光']['日帰り'] or 0)
+
+    # T01(unit,円per人回): 宿泊全目的=4, 宿泊観光=8, 日帰り全目的=20, 日帰り観光=23
+    unit = {'全目的': {}, '観光': {}}
+    for (pur, seg), c in {('全目的', '宿泊'): 4, ('観光', '宿泊'): 8,
+                          ('全目的', '日帰り'): 20, ('観光', '日帰り'): 23}.items():
+        u = total_cell('T01', c)
+        unit[pur][seg] = round(u) if u is not None else None
+    # 計 の unit は非公表 → amt(百万円)/trav(千人) から導出（円per人回・整数）
+    for pur in ('全目的', '観光'):
+        t, a = trav[pur]['計'], amt[pur]['計']
+        unit[pur]['計'] = round(a * 1000.0 / t) if t else None  # 百万円/千人 = 円/人
+
+    wb.close()
+    out = {}
+    for pur in ('全目的', '観光'):
+        out[pur] = {}
+        for seg in ('宿泊', '日帰り', '計'):
+            out[pur][seg] = {
+                'amt': round(amt[pur][seg], 3) if amt[pur][seg] is not None else None,
+                'trav': round(trav[pur][seg], 3) if trav[pur][seg] is not None else None,
+                'unit': unit[pur][seg],
+            }
+    return out
+
+
+def _dc_read_pref_col(ws, val_col):
+    """県別表から {県名: 値}。第1列が順位(1..47)・第2列が県名の行のみ採用。"""
+    d = {}
+    for i in range(1, ws.max_row + 1):
+        rank = ws.cell(row=i, column=1).value
+        name = ws.cell(row=i, column=2).value
+        if isinstance(rank, (int, float)) and 1 <= rank <= 47 \
+                and isinstance(name, str) and name.strip():
+            d[name.strip()] = _dc_val(ws.cell(row=i, column=val_col).value)
+    return d
+
+
+def parse_dc_pref(filepath):
+    """県別集計から 47都道府県の3点セットを読み canonical 単位へ換算。
+    表x-1: 訪問者数(c5,万人)=trav・消費単価(c6,万円/人)=unit / 表x-3: 消費額(c3,億円)=amt
+    戻り値: {目的: {県: {'amt':百万円, 'trav':千人, 'unit':円per人回}}}"""
+    from openpyxl import load_workbook
+    wb = load_workbook(filepath, read_only=True, data_only=True)
+
+    def series(sheet_tu, sheet_amt):
+        trav = _dc_read_pref_col(wb[sheet_tu], 5)   # 万人
+        unit = _dc_read_pref_col(wb[sheet_tu], 6)   # 万円/人
+        amt = _dc_read_pref_col(wb[sheet_amt], 3)   # 億円
+        res = {}
+        for nm in trav:
+            tv, uv, av = trav.get(nm), unit.get(nm), amt.get(nm)
+            res[nm] = {
+                'trav': round(tv * 10, 3) if tv is not None else None,      # 万人→千人 ×10
+                'unit': round(uv * 10000) if uv is not None else None,       # 万円/人→円/人 ×10000
+                'amt': round(av * 100, 3) if av is not None else None,       # 億円→百万円 ×100
+            }
+        return res
+
+    out = {'全目的': series('表1-1', '表1-3'), '観光': series('表2-1', '表2-3')}
+    wb.close()
+    return out
+
+
+def _dc_insert_national(scope, time_key, parsed):
+    for pur, segs in parsed.items():
+        for seg, metrics in segs.items():
+            for m in ('amt', 'trav', 'unit'):
+                node = scope.setdefault(pur, {}).setdefault(seg, {}).setdefault(m, {})
+                if metrics[m] is not None:
+                    node[time_key] = metrics[m]
+
+
+def _dc_insert_pref(prefscope, time_key, parsed):
+    for pur, prefs in parsed.items():
+        for nm, metrics in prefs.items():
+            for m in ('amt', 'trav', 'unit'):
+                node = prefscope.setdefault(pur, {}).setdefault(nm, {}).setdefault(m, {})
+                if metrics[m] is not None:
+                    node[time_key] = metrics[m]
+
+
+def build_dc(annual_files, quarterly_files, pref_files):
+    """dc スキーマ {meta,q,y,pref} を構築。
+    annual_files/quarterly_files/pref_files はいずれも {time_key: path}。"""
+    dc = {
+        'meta': {
+            'src': '旅行・観光消費動向調査（観光庁）',
+            'units': {'amt': '百万円', 'trav': '千人', 'unit': '円/人回'},
+            'note_pref': '県別は宿泊/日帰りの分解なし・目的は全目的/観光の2区分のみ',
+            'note_value': 'amt/trav/unitは公表値を格納。計のunitはamt/travから導出。丸め差でamt≠trav×unitあり',
+            'src_units_raw': {
+                'national': {'amt': '百万円', 'trav': '千人', 'unit': '円/人回'},
+                'pref': {'amt': '億円', 'trav': '万人', 'unit': '万円/人'},
+            },
+        },
+        'q': {}, 'y': {}, 'pref': {},
+    }
+    for tk, path in sorted(quarterly_files.items()):
+        _dc_insert_national(dc['q'], tk, parse_dc_national(path))
+    for tk, path in sorted(annual_files.items()):
+        _dc_insert_national(dc['y'], tk, parse_dc_national(path))
+    for tk, path in sorted(pref_files.items()):
+        _dc_insert_pref(dc['pref'], tk, parse_dc_pref(path))
+    return dc
+
+
+def discover_domestic_files(base_dir):
+    """base_dir 内の国内消費Excelを命名規則で分類。
+    年次 'YYYY_国内消費.xlsx' / 四半期 'YYYYQn_国内消費.xlsx' / 県別 'YYYY_国内消費_都道府県.xlsx'
+    戻り値: (annual{tk:path}, quarterly{tk:path}, pref{tk:path})"""
+    import glob
+    annual, quarterly, pref = {}, {}, {}
+    for path in sorted(glob.glob(os.path.join(base_dir, '*_国内消費*.xlsx'))):
+        base = os.path.basename(path)
+        tk = base.split('_国内消費')[0]
+        if '_都道府県' in base:
+            pref[tk] = path
+        elif 'Q' in tk:
+            quarterly[tk] = path
+        else:
+            annual[tk] = path
+    return annual, quarterly, pref
+
+
 def reembed_index(data, index_path):
     """data を index.html 内の `var RAW = {...};` ブロックへ再埋め込みする。"""
     with open(index_path) as f:
@@ -450,6 +628,8 @@ def main():
     parser.add_argument('--kakuho', help='宿泊旅行統計 第2次確報 (.xlsx)：全国上書き＋都道府県47追加（案A）')
     parser.add_argument('--jnto-monthly', nargs='+', metavar='XLSX',
                         help='JNTO 月次推計値 (.xlsx)：複数指定可・純追加マージ')
+    parser.add_argument('--domestic', action='store_true',
+                        help='旅行・観光消費動向調査(国内)を dc キーへ反映：年次/四半期/県別Excelを命名規則で自動探索')
     parser.add_argument('--output', default='data.json', help='出力先 (default: data.json)')
     args = parser.parse_args()
     reembed = False   # --kakuho / --jnto-monthly 使用時に index.html を再埋め込み
@@ -510,6 +690,17 @@ def main():
                 existing.setdefault("jg", {}).setdefault(c, {})
                 if ym not in existing["jg"][c]: existing["jg"][c][ym] = mv[ym]
             print(f"  → {ym}: {len(r['d'])} カ国 追加")
+        reembed = True
+
+    if args.domestic:
+        base_dir = os.path.dirname(os.path.abspath(args.output))
+        annual, quarterly, preff = discover_domestic_files(base_dir)
+        print(f"日本人消費(旅行・観光消費動向調査)を処理中")
+        print(f"  年次 {sorted(annual)} / 四半期 {sorted(quarterly)} / 県別 {sorted(preff)}")
+        existing["dc"] = build_dc(annual, quarterly, preff)
+        ny = len(existing['dc']['y'].get('全目的', {}).get('計', {}).get('amt', {}))
+        nq = len(existing['dc']['q'].get('全目的', {}).get('計', {}).get('amt', {}))
+        print(f"  → dc: 全国 年次{ny}件/四半期{nq}件, 県別 {len(existing['dc']['pref']['全目的'])} 都道府県")
         reembed = True
 
     with open(args.output, 'w') as f:
