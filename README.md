@@ -45,7 +45,7 @@ GitHub Pages で自動配信。`main` ブランチへの push で自動更新。
 
 > データは `data.json` がマスター。**3系統すべて1行コマンドで実行でき**、
 > スクリプトが `data.json` 更新と `index.html`（`var RAW = {...}`）の再埋め込みまで自動で行う。
-> 作業場所は必ず `~/Desktop/tourism-analytics/`。
+> 作業場所は必ず `~/Library/CloudStorage/OneDrive-個人用/AIレポート/tourism-analytics/`。
 
 ## 0. データ3系統と1行コマンド（早見表）
 | # | データ | いつ | 入力Excel（目安サイズ） | 1行コマンド | 更新範囲 |
@@ -69,7 +69,7 @@ GitHub Pages で自動配信。`main` ブランチへの push で自動更新。
 - 月別の**推計値**Excel（シート名が `YYYY.MM` 形式。例 `2026.04`）。
 
 ## 2. ファイル名の付け方と置き場所
-`~/Desktop/tourism-analytics/` に、下記の名前で保存（**中身のシート名で自動判定するのでファイル名は目印**）：
+`~/Library/CloudStorage/OneDrive-個人用/AIレポート/tourism-analytics/` に、下記の名前で保存（**中身のシート名で自動判定するのでファイル名は目印**）：
 | 系統 | ファイル名の例 |
 |------|----------------|
 | A 全国速報 | `202604_宿泊統計.xlsx` |
@@ -78,25 +78,25 @@ GitHub Pages で自動配信。`main` ブランチへの push で自動更新。
 > Excel自体はリポジトリにコミットしない（入力素材。`git add` しない）。
 
 ## 3. 実行コマンド（系統別）
-> どれも `~/Desktop/tourism-analytics/` で実行。まず `--deploy` なし＝ローカルのみ更新。
+> どれも `~/Library/CloudStorage/OneDrive-個人用/AIレポート/tourism-analytics/` で実行。まず `--deploy` なし＝ローカルのみ更新。
 
 > 3系統とも `data.json` 更新＋`index.html` 再埋め込みまで自動。すべて push はしない（公開は5章）。
 
 ### A. 全国 月次速報
 ```bash
-cd ~/Desktop/tourism-analytics
+cd ~/Library/CloudStorage/OneDrive-個人用/AIレポート/tourism-analytics
 python3 update_monthly.py 202604_宿泊統計.xlsx
 ```
 
 ### B. 都道府県別 確報（案A：全国上書き＋都道府県47追加）
 ```bash
-cd ~/Desktop/tourism-analytics
+cd ~/Library/CloudStorage/OneDrive-個人用/AIレポート/tourism-analytics
 python3 update_data.py --kakuho 202603_宿泊統計.xlsx
 ```
 
 ### C. JNTO 月次（複数月まとめて指定可）
 ```bash
-cd ~/Desktop/tourism-analytics
+cd ~/Library/CloudStorage/OneDrive-個人用/AIレポート/tourism-analytics
 python3 update_data.py --jnto-monthly 202604_JNTO.xlsx 202605_JNTO.xlsx
 # 1ファイルだけなら: python3 update_data.py --jnto-monthly 202604_JNTO.xlsx
 ```
@@ -117,7 +117,7 @@ python3 update_data.py --jnto-monthly 202604_JNTO.xlsx 202605_JNTO.xlsx
 
 ## 5. 安全な更新フロー（毎回これに従う）
 ```bash
-cd ~/Desktop/tourism-analytics
+cd ~/Library/CloudStorage/OneDrive-個人用/AIレポート/tourism-analytics
 git checkout main && git pull                       # 最新化
 git checkout -b feature/YYYYQn-update               # 作業ブランチ
 cp data.json data.json.bak                          # 保険バックアップ
