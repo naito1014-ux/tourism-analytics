@@ -60,6 +60,10 @@ body{background:var(--color-bg);color:var(--color-fg)}
 .mb-notes{font-size:12px;color:var(--color-fg-muted);line-height:1.7;max-width:80ch}
 .mb-static table td:nth-child(n+3){font-variant-numeric:tabular-nums}
 .mb a{color:inherit}
+.mb-multi{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px 24px}
+.mb-multi>.mb-chart{min-width:0}
+.mb-mt{font-size:13px;font-weight:600;margin:0 0 2px;display:flex;align-items:center;gap:6px}
+.mb-mt i{width:10px;height:3px;border-radius:2px;display:inline-block}
 .mb-static{margin-top:18px}
 .mb-h3{font-size:14px;margin:0 0 4px}
 .mb-notes ul{margin:4px 0;padding-left:18px}
@@ -131,10 +135,10 @@ window.dash=(function(){
   </section>
 
   <section id="sec-month">
-    <h2>松江市の月別推移<span class="mb-badge">宿泊</span></h2>
-    <p class="mb-sub">選んだ2つの年の月ごとの延べ宿泊者数です。色の濃い部分が選んだ期間です。</p>
+    <h2>月別推移<span class="mb-badge">宿泊</span></h2>
+    <p class="mb-sub">選んだ2つの年の月ごとの延べ宿泊者数です。地域ごとに縦軸の目盛りが違います。色の濃い部分が選んだ期間です。</p>
     <div class="mb-legend" id="lg-month"></div>
-    <div class="mb-chart" id="ch-month" data-source="stays"></div>
+    <div class="mb-multi" id="ch-month" data-source="stays"></div>
   </section>
 
   <section id="sec-rank">
@@ -272,27 +276,31 @@ function kpis(p,cmp){
 }
 
 function monthChart(p,stays){
-  const el=document.getElementById('ch-month'), lg=document.getElementById('lg-month'); lg.textContent='';
-  if(!stays){ placeholder(el,'読み込み中…'); return; } clearPh(el);
+  const box=document.getElementById('ch-month'), lg=document.getElementById('lg-month'); lg.textContent=''; box.textContent='';
+  if(!stays){ box.textContent='読み込み中…'; return; }
   const ys=[p.ty,p.cy], cols={[p.ty]:'var(--mb-matsue)',[p.cy]:'var(--color-fg-muted)'};
   for(const y of ys){ const s=document.createElement('span'), i=document.createElement('i'); i.style.borderColor=cols[y]; if(y===p.cy) i.style.borderTopStyle='dashed'; s.append(i,document.createTextNode(y+'年')); lg.appendChild(s); }
-  const pts=y=>stays.filter(r=>r.region==='松江市'&&r.segment===p.seg&&r.year===y).map(r=>({m:r.month,v:r.value})).sort((a,b)=>a.m-b.m);
-  const series=ys.map(y=>({y,pts:pts(y)})); const all=series.flatMap(s=>s.pts); if(!all.length){ placeholder(el,'データがありません'); return; }
-  const W=el.clientWidth||600, H=240, m={t:12,r:12,b:24,l:56};
-  const x=d3.scaleLinear().domain([1,12]).range([m.l,W-m.r]), y=d3.scaleLinear().domain([0,d3.max(all,d=>d.v)]).nice().range([H-m.b,m.t]);
-  const svg=d3.select(el).append('svg').attr('width','100%').attr('viewBox',`0 0 ${W} ${H}`);
-  const lo=p.mode==='cum'?1:p.mo;
-  svg.append('rect').attr('x',x(lo)-(W-m.l-m.r)/22).attr('width',x(p.mo)-x(lo)+(W-m.l-m.r)/11).attr('y',m.t).attr('height',H-m.t-m.b).attr('fill','color-mix(in srgb, var(--mb-matsue) 8%, transparent)');
-  svg.append('g').attr('class','grid').attr('transform',`translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W-m.l-m.r)).tickFormat(d3.format('~s')));
-  svg.append('g').attr('transform',`translate(0,${H-m.b})`).call(d3.axisBottom(x).ticks(12).tickFormat(d=>d+'月'));
-  const line=d3.line().x(d=>x(d.m)).y(d=>y(d.v));
-  for(const s of series.slice().reverse()){ svg.append('path').attr('d',line(s.pts)).attr('fill','none').attr('stroke',cols[s.y]).attr('stroke-width',s.y===p.ty?2.6:1.8).attr('stroke-dasharray',s.y===p.cy?'5 4':null);
-    svg.append('g').selectAll('circle').data(s.pts).join('circle').attr('cx',d=>x(d.m)).attr('cy',d=>y(d.v)).attr('r',2.6).attr('fill',cols[s.y]); }
-  const tip=tipper(el);
-  svg.append('rect').attr('x',m.l).attr('y',m.t).attr('width',W-m.l-m.r).attr('height',H-m.t-m.b).attr('fill','transparent')
-    .on('mousemove',e=>{ const [mx]=d3.pointer(e), mm=Math.max(1,Math.min(12,Math.round(x.invert(mx)))); const lines=['松江市 '+mm+'月'];
-      for(const s of series){ const q=s.pts.find(d=>d.m===mm); lines.push(s.y+'年  '+(q?fmt(q.v)+' 人泊':'—')); }
-      const [px,py]=d3.pointer(e,el); tip.show(lines,px,py); }).on('mouseleave',()=>tip.hide());
+  for(const reg of regions(p)){
+    const cell=document.createElement('div'); cell.className='mb-chart'; box.appendChild(cell);
+    const t=document.createElement('div'); t.className='mb-mt'; const ti=document.createElement('i'); ti.style.background=colorOf(p,reg); t.append(ti,document.createTextNode(reg)); cell.appendChild(t);
+    const series=ys.map(y=>({y,pts:stays.filter(r=>r.region===reg&&r.segment===p.seg&&r.year===y).map(r=>({m:r.month,v:r.value})).sort((a,b)=>a.m-b.m)}));
+    const all=series.flatMap(s=>s.pts); if(!all.length){ const e=document.createElement('div'); e.className='mb-sub'; e.textContent='データがありません'; cell.appendChild(e); continue; }
+    const W=cell.clientWidth||320, H=170, m={t:8,r:8,b:20,l:44};
+    const x=d3.scaleLinear().domain([1,12]).range([m.l,W-m.r]), y=d3.scaleLinear().domain([0,d3.max(all,d=>d.v)]).nice().range([H-m.b,m.t]);
+    const svg=d3.select(cell).append('svg').attr('width','100%').attr('viewBox',`0 0 ${W} ${H}`);
+    const lo=p.mode==='cum'?1:p.mo, half=(W-m.l-m.r)/22;
+    svg.append('rect').attr('x',x(lo)-half).attr('width',x(p.mo)-x(lo)+2*half).attr('y',m.t).attr('height',H-m.t-m.b).attr('fill','color-mix(in srgb, var(--mb-matsue) 8%, transparent)');
+    svg.append('g').attr('class','grid').attr('transform',`translate(${m.l},0)`).call(d3.axisLeft(y).ticks(4).tickSize(-(W-m.l-m.r)).tickFormat(d3.format('~s')));
+    svg.append('g').attr('transform',`translate(0,${H-m.b})`).call(d3.axisBottom(x).tickValues([1,3,5,7,9,11]).tickFormat(d=>d+'月'));
+    const line=d3.line().x(d=>x(d.m)).y(d=>y(d.v));
+    for(const s of series.slice().reverse()){ svg.append('path').attr('d',line(s.pts)).attr('fill','none').attr('stroke',cols[s.y]).attr('stroke-width',s.y===p.ty?2.4:1.6).attr('stroke-dasharray',s.y===p.cy?'5 4':null);
+      svg.append('g').selectAll('circle').data(s.pts).join('circle').attr('cx',d=>x(d.m)).attr('cy',d=>y(d.v)).attr('r',2.2).attr('fill',cols[s.y]); }
+    const tip=tipper(cell);
+    svg.append('rect').attr('x',m.l).attr('y',m.t).attr('width',W-m.l-m.r).attr('height',H-m.t-m.b).attr('fill','transparent')
+      .on('mousemove',e=>{ const [mx]=d3.pointer(e), mm=Math.max(1,Math.min(12,Math.round(x.invert(mx)))); const lines=[reg+' '+mm+'月'];
+        for(const s of series){ const q=s.pts.find(d=>d.m===mm); lines.push(s.y+'年  '+(q?fmt(q.v)+' 人泊':'—')); }
+        const [px,py]=d3.pointer(e,cell); tip.show(lines,px,py); }).on('mouseleave',()=>tip.hide());
+  }
 }
 
 function rankChart(p,cmp){
