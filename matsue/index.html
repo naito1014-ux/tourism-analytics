@@ -60,6 +60,8 @@ body{background:var(--color-bg);color:var(--color-fg)}
 .mb-notes{font-size:12px;color:var(--color-fg-muted);line-height:1.7;max-width:80ch}
 .mb-static table td:nth-child(n+3){font-variant-numeric:tabular-nums}
 .mb a{color:inherit}
+.mb-static{margin-top:18px}
+.mb-h3{font-size:14px;margin:0 0 4px}
 .mb-notes ul{margin:4px 0;padding-left:18px}
 .mb-vs{font-size:13px;color:var(--color-fg-muted)}
 .mb .dash-select{min-width:0}
@@ -88,25 +90,6 @@ window.dash=(function(){
 <p class="page-d">松江市の延べ宿泊者数の増減を、島根県・全国・各都道府県と同じ期間で比べます。出典：観光庁「宿泊旅行統計調査」、松江市は日本観光振興デジタルプラットフォームから転記。</p>
 
 <div class="mb" id="mb">
-<section class="mb-static" id="summary">
-  <h2>主要な数字（2026年1〜7月、前年・2024年・2019年の同じ期間との比較）</h2>
-  <p class="mb-sub">延べ宿泊者数（人泊）。出典：観光庁「宿泊旅行統計調査」。松江市は日本観光振興デジタルプラットフォームの市区町村別推移から転記。全データ（月別）は <a href="stays.csv">stays.csv</a> にあります。</p>
-  <div class="mb-tw"><table>
-    <thead><tr><th>地域</th><th>区分</th><th>2026年1〜7月</th><th>2025年1〜7月</th><th>前年比</th><th>2024年1〜7月</th><th>2024年比</th><th>2019年1〜7月</th><th>2019年比</th></tr></thead>
-    <tbody>
-      <tr><td>松江市</td><td>合計</td><td>655,173</td><td>497,318</td><td>+31.7%</td><td>576,307</td><td>+13.7%</td><td>605,600</td><td>+8.2%</td></tr>
-      <tr><td>島根県</td><td>合計</td><td>1,849,200</td><td>1,725,910</td><td>+7.1%</td><td>1,889,110</td><td>-2.1%</td><td>1,979,550</td><td>-6.6%</td></tr>
-      <tr><td>全国</td><td>合計</td><td>350,717,170</td><td>367,907,650</td><td>-4.7%</td><td>364,098,840</td><td>-3.7%</td><td>337,084,020</td><td>+4.0%</td></tr>
-      <tr><td>松江市</td><td>日本人</td><td>623,343</td><td>472,652</td><td>+31.9%</td><td>552,147</td><td>+12.9%</td><td>579,749</td><td>+7.5%</td></tr>
-      <tr><td>島根県</td><td>日本人</td><td>1,785,340</td><td>1,664,720</td><td>+7.2%</td><td>1,840,530</td><td>-3.0%</td><td>1,917,140</td><td>-6.9%</td></tr>
-      <tr><td>全国</td><td>日本人</td><td>254,160,640</td><td>262,422,040</td><td>-3.1%</td><td>272,199,210</td><td>-6.6%</td><td>267,683,450</td><td>-5.1%</td></tr>
-      <tr><td>松江市</td><td>外国人</td><td>31,830</td><td>24,666</td><td>+29.0%</td><td>24,160</td><td>+31.7%</td><td>25,851</td><td>+23.1%</td></tr>
-      <tr><td>島根県</td><td>外国人</td><td>63,860</td><td>61,190</td><td>+4.4%</td><td>48,580</td><td>+31.5%</td><td>62,410</td><td>+2.3%</td></tr>
-      <tr><td>全国</td><td>外国人</td><td>96,556,530</td><td>105,485,610</td><td>-8.5%</td><td>91,899,630</td><td>+5.1%</td><td>69,400,570</td><td>+39.1%</td></tr>
-    </tbody>
-  </table></div>
-  <p class="mb-sub">2026年1〜7月の前年同期比（合計）の順位：松江市は47都道府県に入れると1位相当、島根県は12位。</p>
-</section>
 
   <div class="mb-controls" id="mb-controls">
     <div class="mb-ctl">比べる年
@@ -129,6 +112,25 @@ window.dash=(function(){
     <h2>増減率<span class="mb-badge">宿泊（延べ宿泊者数）</span></h2>
     <p class="mb-period" id="p-label">—</p>
     <div class="mb-kpis" id="kpis" data-source="cmp"></div>
+  <div class="mb-static" id="summary">
+  <h3 class="mb-h3">主要な数字（2026年1〜7月、前年・2024年・2019年の同じ期間との比較）</h3>
+  <p class="mb-sub">延べ宿泊者数（人泊）。出典：観光庁「宿泊旅行統計調査」。松江市は日本観光振興デジタルプラットフォームの市区町村別推移から転記。全データ（月別）は <a href="stays.csv">stays.csv</a> にあります。</p>
+  <div class="mb-tw"><table>
+    <thead><tr><th>地域</th><th>区分</th><th>2026年1〜7月</th><th>2025年1〜7月</th><th>前年比</th><th>2024年1〜7月</th><th>2024年比</th><th>2019年1〜7月</th><th>2019年比</th></tr></thead>
+    <tbody>
+      <tr><td>松江市</td><td>合計</td><td>655,173</td><td>497,318</td><td>+31.7%</td><td>576,307</td><td>+13.7%</td><td>605,600</td><td>+8.2%</td></tr>
+      <tr><td>島根県</td><td>合計</td><td>1,849,200</td><td>1,725,910</td><td>+7.1%</td><td>1,889,110</td><td>-2.1%</td><td>1,979,550</td><td>-6.6%</td></tr>
+      <tr><td>全国</td><td>合計</td><td>350,717,170</td><td>367,907,650</td><td>-4.7%</td><td>364,098,840</td><td>-3.7%</td><td>337,084,020</td><td>+4.0%</td></tr>
+      <tr><td>松江市</td><td>日本人</td><td>623,343</td><td>472,652</td><td>+31.9%</td><td>552,147</td><td>+12.9%</td><td>579,749</td><td>+7.5%</td></tr>
+      <tr><td>島根県</td><td>日本人</td><td>1,785,340</td><td>1,664,720</td><td>+7.2%</td><td>1,840,530</td><td>-3.0%</td><td>1,917,140</td><td>-6.9%</td></tr>
+      <tr><td>全国</td><td>日本人</td><td>254,160,640</td><td>262,422,040</td><td>-3.1%</td><td>272,199,210</td><td>-6.6%</td><td>267,683,450</td><td>-5.1%</td></tr>
+      <tr><td>松江市</td><td>外国人</td><td>31,830</td><td>24,666</td><td>+29.0%</td><td>24,160</td><td>+31.7%</td><td>25,851</td><td>+23.1%</td></tr>
+      <tr><td>島根県</td><td>外国人</td><td>63,860</td><td>61,190</td><td>+4.4%</td><td>48,580</td><td>+31.5%</td><td>62,410</td><td>+2.3%</td></tr>
+      <tr><td>全国</td><td>外国人</td><td>96,556,530</td><td>105,485,610</td><td>-8.5%</td><td>91,899,630</td><td>+5.1%</td><td>69,400,570</td><td>+39.1%</td></tr>
+    </tbody>
+  </table></div>
+  <p class="mb-sub">2026年1〜7月の前年同期比（合計）の順位：松江市は47都道府県に入れると1位相当、島根県は12位。</p>
+</div>
   </section>
 
   <section id="sec-month">
